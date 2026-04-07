@@ -1,0 +1,11 @@
+FROM kivy/buildozer:latest
+
+# Copy project files into the container (avoids Windows filesystem issues)
+WORKDIR /build
+COPY main.py monitor.py rules.json buildozer.spec requirements.txt ./
+
+# Build the APK entirely inside the container
+RUN buildozer android debug
+
+# Default command: just list the built APK
+CMD ["ls", "-lh", "bin/"]
