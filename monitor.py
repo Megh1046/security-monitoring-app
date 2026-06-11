@@ -330,10 +330,15 @@ def start_dashboard(aggregator: RiskAggregator, port: int = 5000):
     print(f"{C.CYAN}Dashboard → http://localhost:{port}/{C.RESET}")
 
 # ─── Core Monitor Loop ────────────────────────────────────────────────────────
-def monitor(device: str | None, batch_file: str | None, rules_path: str, web: bool, port: int):
-    rules_file = Path(rules_path)
+def monitor(device: str | None, batch_file: str | None, rules_path: str, web: bool, port: int, status_callback=None):
+    # Determine the directory of the current script to find rules.json on Android
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    rules_file = Path(os.path.join(base_dir, rules_path))
+    
     if not rules_file.exists():
-        print(f"{C.RED}rules.json not found at {rules_path}{C.RESET}")
+        msg = f"rules.json not found at {rules_file}"
+        if status_callback: status_callback(f"Error: {msg}")
+        print(f"{C.RED}{msg}{C.RESET}")
         return
 
     with open(rules_file) as f:
@@ -343,6 +348,7 @@ def monitor(device: str | None, batch_file: str | None, rules_path: str, web: bo
     agg  = RiskAggregator()
 
     if web:
+        if status_callback: status_callback("Starting Web Dashboard...")
         start_dashboard(agg, port)
 
     print(f"\n{C.CYAN}{C.BOLD}Security Monitor{C.RESET}  "
@@ -352,17 +358,27 @@ def monitor(device: str | None, batch_file: str | None, rules_path: str, web: bo
         print(f"{C.GREY}Batch mode → {batch_file}{C.RESET}\n")
         source = open(batch_file, encoding='utf-8', errors='replace')
     else:
+        # Check if we are on Android
+        on_android = 'ANDROID_ARGUMENT' in os.environ or 'app' in base_dir
         cmd = ['adb']
-        if device:
-            cmd += ['-s', device]
-        cmd += ['logcat', '-v', 'threadtime']
-        print(f"{C.GREY}Live mode  → {' '.join(cmd)}{C.RESET}")
-        print(f"{C.GREY}Make sure: adb tcpip 5555  (run once with USB){C.RESET}\n")
+        if on_android:
+            cmd = ['logcat', '-v', 'threadtime']
+            print(f"{C.GREY}Running locally on Android...{C.RESET}")
+        else:
+            if device:
+                cmd += ['-s', device]
+            cmd += ['logcat', '-v', 'threadtime']
+            print(f"{C.GREY}Live mode  → {' '.join(cmd)}{C.RESET}")
+            print(f"{C.GREY}Make sure: adb tcpip 5555  (run once with USB){C.RESET}\n")
+            
         try:
+            if status_callback: status_callback("Accessing Logcat Stream...")
             proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, encoding='utf-8', errors='replace')
             source = proc.stdout
-        except FileNotFoundError:
-            print(f"{C.RED}adb not found. Install Android SDK Platform Tools and add to PATH.{C.RESET}")
+        except (FileNotFoundError, PermissionError) as e:
+            msg = f"Failed to start logcat: {str(e)}"
+            if status_callback: status_callback(f"Error: {msg}")
+            print(f"{C.RED}{msg}{C.RESET}")
             return
 
     lines_parsed = 0

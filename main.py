@@ -56,17 +56,39 @@ class SecurityMonitorApp(App):
         return layout
 
     def run_monitor(self):
-        # Wait a moment for Kivy UI to draw
-        time.sleep(2)
-        self.label.text = "Security Monitor: ACTIVE\n\nLogs are being analysed.\n(Local Web Server running on Port 5000)"
-        self.label.color = (0, 1, 0.5, 1) # Greenish
-        self.btn.disabled = False
+        # Callback to update UI from the monitor thread
+        def update_status(text):
+            from kivy.clock import Clock
+            Clock.schedule_once(lambda dt: self.set_label(text))
+
+        update_status("Starting Monitoring Service...")
+        time.sleep(1)
         
-        # Execute the main monitoring loop
-        monitor.monitor(device=None, batch_file=None, rules_path='rules.json', web=True, port=5000)
+        # Execute the main monitoring loop with a status callback
+        try:
+            monitor.monitor(
+                device=None, 
+                batch_file=None, 
+                rules_path='rules.json', 
+                web=True, 
+                port=5000, 
+                status_callback=update_status
+            )
+        except Exception as e:
+            update_status(f"Critical Error: {str(e)}")
+
+    def set_label(self, text):
+        self.label.text = f"Security Monitor\n{text}"
+        if "Error" in text:
+            self.label.color = (1, 0, 0, 1) # Red
+        elif "Active" in text or "Running" in text:
+            self.label.color = (0, 1, 0.5, 1) # Green
+            self.btn.disabled = False
+        else:
+            self.label.color = (0.8, 0.8, 0.8, 1)
 
     def open_dashboard(self, instance):
-        # This will open the default Android mobile browser pointed to Flask
+        # Try both 127.0.0.1 and 0.0.0.0 for compatibility
         webbrowser.open('http://127.0.0.1:5000/')
 
 if __name__ == '__main__':
